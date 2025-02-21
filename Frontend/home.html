@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PARSHURAM</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #000;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Fire Background with Rotation (Circular & Larger) */
+    .fire-background {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 500px; /* Increased size */
+      height: 500px;
+      background: url('image2.jpg') no-repeat center center;
+      background-size: cover;
+      border-radius: 50%; /* Keeps it circular */
+      transform: translate(-50%, -50%);
+      animation: rotateFire 20s linear infinite;
+      z-index: 1;
+    }
+
+    @keyframes rotateFire {
+      0% { transform: translate(-50%, -50%) rotate(0deg); }
+      100% { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
+    /* Title and Subtitle Positioned in the Top-Left Corner */
+    .title-container {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      text-align: left;
+      z-index: 3;
+    }
+
+    /* Title Style with Individual Letter Animation */
+    .title {
+      font-size: 3.1rem; /* Decreased size */
+      font-weight: bold;
+      display: flex;
+    }
+
+    .title span {
+      animation: letterColorChange 3s infinite;
+      animation-delay: calc(0.4s * var(--i)); /* Delay for each letter */
+      display: inline-block;
+    }
+
+    @keyframes letterColorChange {
+      0%, 100% { color: rgb(255, 255, 255); }
+      33% { color: orange; }
+      66% { color: rgb(255, 255, 255); }
+    }
+
+    /* Subtitle Below the Title */
+    .subtitle {
+      font-size: 1.5rem;
+      color: white;
+      margin-top: 5px;
+    }
+
+    /* Parshuram Image */
+    .parshuram-image {
+      position: absolute;
+      z-index: 2;
+      width: 25%; /* Adjusted size */
+      height: auto;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 1;
+    }
+
+    /* Navigation Bar */
+    .nav-bar {
+      display: flex;
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      padding: 10px 20px;
+      border-radius: 10px;
+    }
+
+    .nav-bar a {
+      color: white;
+      text-decoration: none;
+      font-size: 1.2rem;
+      margin: 0 15px;
+      padding: 8px;
+      transition: 0.3s;
+    }
+
+    .nav-bar a:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 5px;
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- Fire Rotating Background (Circular & Larger) -->
+  <div class="fire-background"></div>
+
+  <!-- Parshuram Image in the center -->
+  <img src="image.png" alt="Parshuram" class="parshuram-image">
+
+  <!-- Title and Subtitle in the Top-Left Corner -->
+  <div class="title-container">
+    <div class="title">
+      <span style="--i:0;">P</span>
+      <span style="--i:1;">A</span>
+      <span style="--i:2;">R</span>
+      <span style="--i:3;">S</span>
+      <span style="--i:4;">H</span>
+      <span style="--i:5;">U</span>
+      <span style="--i:6;">R</span>
+      <span style="--i:7;">A</span>
+      <span style="--i:8;">M</span>
+    </div>
+    <div class="subtitle">A Security Platform</div>
+  </div>
+
+  <div class="nav-bar">
+    <a href="#">Home</a>
+    <a href="#">Features</a>
+    <a href="#">About</a>
+    <a href="#">Contact</a>
+  </div>
+
+</body>
+</html>
