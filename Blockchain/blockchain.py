@@ -1,14 +1,23 @@
 import hashlib
 import datetime
-from hashlib import sha256
 import json
-from flask import Flask, jsonify, request
-from uuid import uuid4
+import time
+import threading
+from pymongo import MongoClient
 
 class Blockchain:
     def __init__(self):
+        # Connect to MongoDB
+        self.client = MongoClient("mongodb://localhost:27017/")
+        self.db = self.client["SIEM_Tool"]
+        self.logs_collection = self.db["logs"]
+        self.critical_logs_index = self.db["critical_logs_index"]
+
         self.chain = []
         self.create_block(proof=1, previous_hash='0')
+
+        # Start auto-cleanup thread
+        self.start_cleanup_thread()
 
     def create_block(self, proof, previous_hash):
         block = {
@@ -16,7 +25,7 @@ class Blockchain:
             'timestamp': str(datetime.datetime.now()),
             'proof': proof,
             'previous_hash': previous_hash,
-            'data': []  #  Logs will be stored as hashes here
+            'logs': []
         }
         self.chain.append(block)
         return block
@@ -27,7 +36,7 @@ class Blockchain:
     def proof_of_work(self, previous_proof):
         new_proof = 1
         check_proof = False
-        while check_proof is False:
+        while not check_proof:
             hash_operation = hashlib.sha256(
                 str(new_proof**2 - previous_proof**2).encode()).hexdigest()
             if hash_operation[:4] == '0000':
@@ -40,87 +49,97 @@ class Blockchain:
         encoded_block = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(encoded_block).hexdigest()
 
-    def is_chain_valid(self, chain):
-        previous_block = chain[0]
-        block_index = 1
-        while block_index < len(chain):
-            block = chain[block_index]
-            if block['previous_hash'] != self.hash(previous_block):
-                return False
-            previous_proof = previous_block['proof']
-            proof = block['proof']
-            hash_operation = hashlib.sha256(
-                str(proof**2 - previous_proof**2).encode()).hexdigest()
-            if hash_operation[:4] != '0000':
-                return False
-            previous_block = block
-            block_index += 1
-        return True
+    def add_log(self, log, is_critical=False, permanent=False, delete_after_days=5):
+        expiry_time = None if permanent else datetime.datetime.now() + datetime.timedelta(days=delete_after_days)
 
-    def add_log(self, log_data):
-        """Hashes the log data and adds the hash to the current block."""
-        log_hash = hashlib.sha256(log_data.encode('utf-8')).hexdigest()
-        #self.current_block['data'].append(log_hash)
-        previous_block = self.get_previous_block()
-        proof = self.proof_of_work(previous_block['proof'])
-        previous_hash = self.hash(previous_block)
-        block = self.create_block(proof, previous_hash)
-        block['data'].append(log_hash)
-        return block
+        log_entry = {
+            "timestamp": log["timestamp"],
+            "level": log["level"],
+            "source": log["source"],
+            "message": log["message"],
+            "type": log.get("type", "unknown"),
+            "is_critical": is_critical,
+            "permanent": permanent,
+            "expiry_time": expiry_time
+        }
+        log_id = self.logs_collection.insert_one(log_entry).inserted_id
 
-# Flask Web App Setup
-app = Flask(__name__)
-node_identifier = str(uuid4()).replace('-', '')
+        if is_critical:
+            log_hash = hashlib.sha256(json.dumps(log, sort_keys=True).encode()).hexdigest()
+            previous_block = self.get_previous_block()
+            proof = self.proof_of_work(previous_block['proof'])
+            previous_hash = self.hash(previous_block)
+            block = self.create_block(proof, previous_hash)
+            block['logs'].append({"log_id": str(log_id), **log})
 
-blockchain = Blockchain()
+            self.critical_logs_index.insert_one({
+                "log_id": str(log_id),
+                "block_index": block["index"],
+                "log_hash": log_hash,
+                "expiry_time": expiry_time
+            })
 
-@app.route('/mine_block', methods=['GET'])
-def mine_block():
-    previous_block = blockchain.get_previous_block()
-    proof = blockchain.proof_of_work(previous_block['proof'])
-    previous_hash = blockchain.hash(previous_block)
-    block = blockchain.create_block(proof, previous_hash)
+        return log_entry
 
-    response = {'message': 'Congratulations, you just mined a block!',
-                'index': block['index'],
-                'timestamp': block['timestamp'],
-                'proof': block['proof'],
-                'previous_hash': block['previous_hash'],
-                'data': block['data']}  # Include the data in the response
-    return jsonify(response), 200
+    def get_critical_log(self, log_id):
+        indexed_log = self.critical_logs_index.find_one({"log_id": log_id})
+        if not indexed_log:
+            return None
 
+        block_index = indexed_log["block_index"]
+        log_hash = indexed_log["log_hash"]
 
-@app.route('/is_valid', methods=['GET'])
-def is_valid():
-    is_valid = blockchain.is_chain_valid(blockchain.chain)
-    if is_valid:
-        response = {'message': 'All good. The Blockchain is valid.'}
-    else:
-        response = {'message': 'Houston, we have a problem! The Blockchain is not valid.'}
-    return jsonify(response), 200
+        for block in self.chain:
+            if block["index"] == block_index:
+                for log in block["logs"]:
+                    if hashlib.sha256(json.dumps(log, sort_keys=True).encode()).hexdigest() == log_hash:
+                        return log
+        return None
 
-@app.route('/get_chain', methods=['GET'])
-def get_chain():
-    response = {'chain': blockchain.chain,
-                'length': len(blockchain.chain)}
-    return jsonify(response), 200
+    def delete_expired_logs(self):
+        now = datetime.datetime.now()
 
+        expired_logs = self.logs_collection.find({"expiry_time": {"$lte": now}, "permanent": False})
+        for log in expired_logs:
+            log_id = str(log["_id"])
+            self.logs_collection.delete_one({"_id": log["_id"]})
+            indexed_log = self.critical_logs_index.find_one({"log_id": log_id})
 
-@app.route('/add_log', methods=['POST'])
-def add_log():
-    json = request.get_json()
-    log_data = json.get('log_data')
+            if indexed_log:
+                block_index = indexed_log["block_index"]
+                self.critical_logs_index.delete_one({"log_id": log_id})
 
-    if log_data is None:
-        return "Missing 'log_data' in the request", 400
+                for block in self.chain:
+                    if block["index"] == block_index:
+                        block["logs"] = [l for l in block["logs"] if l["log_id"] != log_id]
+                        
+                        # If block is empty, remove it
+                        if not block["logs"]:
+                            self.chain.remove(block)
+                        break
 
-    block = blockchain.add_log(log_data)
-    response = {'message': 'Log added to block',
-                'block': block}
-    return jsonify(response), 201
+    def delete_log_now(self, log_id):
+        self.logs_collection.delete_one({"_id": log_id})
+        indexed_log = self.critical_logs_index.find_one({"log_id": str(log_id)})
 
+        if indexed_log:
+            block_index = indexed_log["block_index"]
+            self.critical_logs_index.delete_one({"log_id": str(log_id)})
 
-# Running the app
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+            for block in self.chain:
+                if block["index"] == block_index:
+                    block["logs"] = [l for l in block["logs"] if l["log_id"] != str(log_id)]
+                    
+                    # If block becomes empty, remove it
+                    if not block["logs"]:
+                        self.chain.remove(block)
+                    break
 
+    def start_cleanup_thread(self):
+        def cleanup():
+            while True:
+                self.delete_expired_logs()
+                time.sleep(3600)  # Check every hour
+
+        thread = threading.Thread(target=cleanup, daemon=True)
+        thread.start()
