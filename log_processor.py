@@ -49,6 +49,8 @@ high_severity_levels = {
     4776: "Failed NTLM authentication",
 }
 
+critical_levels = [1,2,3]
+
 def detect_threats(log_entry, high_severity_levels):
     threats = []
     event_id = log_entry.get("EventID")
@@ -56,7 +58,7 @@ def detect_threats(log_entry, high_severity_levels):
     if event_id in high_severity_levels:
         threats.append(high_severity_levels[event_id])
         
-    return threats if threats else None
+    return threats if threats else False
 
 def detect_anomalies(event_counts):
     event_frequencies = np.array(list(event_counts.values()))
@@ -82,14 +84,18 @@ def process_logs_in_batches(logs, batch_size=5):
             log_entry["threats"] = detect_threats(log_entry, high_severity_levels)
             event_counts[log_entry["EventID"]] = event_counts.get(log_entry["EventID"], 0) + 1
 
-            if log_entry["Level"] in {1, 2} or log_entry["threats"]:
+            if log_entry["Level"] in critical_levels or log_entry["threats"]:
                 blockchain_logs.append(log_entry)
             else:
                 mongodb_logs.append(log_entry)
         anomalies = detect_anomalies(event_counts)
         ml_anomalies = ml_anomaly_detection(batch)
+
         for log in mongodb_logs[:]:
             if log["EventID"] in anomalies or log["EventID"] in ml_anomalies:
                 log["anomaly"] = anomalies.get(log["EventID"], ml_anomalies.get(log["EventID"]))
-                blockchain_logs.append(log)
+                
+                if log["Level"] in critical_levels or log["threats"]:
+                    mongodb_logs.remove(log)
+                    blockchain_logs.append(log)
     return blockchain_logs, mongodb_logs
