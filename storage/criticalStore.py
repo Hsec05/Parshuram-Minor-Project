@@ -13,7 +13,11 @@ def store_critical_logs(logs, type):
 
     # Insert hashes first
     collections[f"{type}_blockchain_hashes"].insert_many(hashes)
-    
+        
+    # Remove `_id` from logs before inserting
+    for log in logs:
+        log.pop("_id", None)
+        
     # Insert logs with reference to hashes
     collections[f"{type}_critical_logs"].insert_many(logs)
     
@@ -32,6 +36,8 @@ def store_critical_log(log, type):
     if "hash" not in log:
         raise ValueError("Log must contain a 'hash' key")
 
+    log.pop("_id", None)
+    # print(log)
     collections[f"{type}_critical_logs"].insert_one(log)
 
 def delete_critical_log(log, type):
