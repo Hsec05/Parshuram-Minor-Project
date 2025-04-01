@@ -60,12 +60,13 @@ class Blockchain:
 
             # Generate block hash
             block_hash = self.compute_hash(block)
-            block["hash"] = block_hash 
+            log["hash"] = block_hash 
+            log["previous_hash"] = self.previous_hash
 
             self.previous_hash = block_hash
             # processed_logs.append(block)
-            store_block_hash(block_hash, self.log_type)
-            store_critical_log(block, self.log_type)
+            store_block_hash(block_hash, self.log_type.lower())
+            store_critical_log(log, self.log_type.lower())
 
         # store_critical_logs(processed_logs)
         return True  
